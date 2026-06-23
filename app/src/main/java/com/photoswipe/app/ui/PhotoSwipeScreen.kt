@@ -2,32 +2,61 @@ package com.photoswipe.app.ui
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.BoxWithConstraints
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.photoswipe.app.data.Photo
+import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 @Composable
 fun PhotoSwipeScreen(
     hasPermission: Boolean,
     photos: List<Photo>,
+    trashCount: Int,
     onKeep: (Photo) -> Unit,
-    onDeleteRequest: (Photo) -> Unit,
+    onTrash: (Photo) -> Unit,
+    onOpenTrash: () -> Unit,
+    onOpenAbout: () -> Unit,
     onRequestPermissionAgain: () -> Unit
 ) {
     Scaffold { padding ->
@@ -35,12 +64,14 @@ fun PhotoSwipeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .background(Color(0xFF111111)),
-            contentAlignment = Alignment.Center
+                .background(Color(0xFF111111))
         ) {
             when {
-                !hasPermission -> PermissionMessage(onRequestPermissionAgain)
-                photos.isEmpty() -> EmptyState()
+                !hasPermission -> PermissionMessage(
+                    modifier = Modifier.fillMaxSize(),
+                    onRetry = onRequestPermissionAgain
+                )
+                photos.isEmpty() -> EmptyState(modifier = Modifier.fillMaxSize())
                 else -> {
                     val currentPhoto = photos.first()
                     SwipeablePhotoCard(
@@ -48,8 +79,21 @@ fun PhotoSwipeScreen(
                         photo = currentPhoto,
                         remaining = photos.size,
                         onKeep = { onKeep(currentPhoto) },
-                        onDelete = { onDeleteRequest(currentPhoto) }
+                        onTrash = { onTrash(currentPhoto) }
                     )
+                }
+            }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(12.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TopBarButton(label = "Papelera ($trashCount)", onClick = onOpenTrash)
+                Spacer(Modifier.width(8.dp))
+                IconButton(onClick = onOpenAbout) {
+                    Icon(Icons.Filled.Info, contentDescription = "Acerca de", tint = Color.White)
                 }
             }
         }
@@ -57,30 +101,42 @@ fun PhotoSwipeScreen(
 }
 
 @Composable
-private fun PermissionMessage(onRetry: () -> Unit) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            "Necesitamos permiso para ver tus fotos",
-            color = Color.White,
-            fontSize = 18.sp
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onRetry) {
-            Text("Conceder permiso")
+private fun TopBarButton(label: String, onClick: () -> Unit) {
+    Button(onClick = onClick) {
+        Icon(Icons.Filled.Delete, contentDescription = null, modifier = Modifier.height(18.dp))
+        Text(label, fontSize = 13.sp, modifier = Modifier.padding(start = 4.dp))
+    }
+}
+
+@Composable
+private fun PermissionMessage(modifier: Modifier = Modifier, onRetry: () -> Unit) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "Necesitamos permiso para ver tus fotos",
+                color = Color.White,
+                fontSize = 18.sp
+            )
+            Spacer(Modifier.height(16.dp))
+            Button(onClick = onRetry) {
+                Text("Conceder permiso")
+            }
         }
     }
 }
 
 @Composable
-private fun EmptyState() {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text("🎉", fontSize = 48.sp)
-        Spacer(Modifier.height(8.dp))
-        Text(
-            "¡Revisaste todas las fotos!",
-            color = Color.White,
-            fontSize = 20.sp
-        )
+private fun EmptyState(modifier: Modifier = Modifier) {
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("🎉", fontSize = 48.sp)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "¡Revisaste todas las fotos!",
+                color = Color.White,
+                fontSize = 20.sp
+            )
+        }
     }
 }
 
@@ -90,21 +146,27 @@ private fun SwipeablePhotoCard(
     photo: Photo,
     remaining: Int,
     onKeep: () -> Unit,
-    onDelete: () -> Unit
+    onTrash: () -> Unit
 ) {
-    val density = LocalDensity.current
-    val screenWidthPx = with(density) { 1000.dp.toPx() }
-    val swipeThresholdPx = with(density) { 120.dp.toPx() }
-
-    val offsetX = remember(key) { Animatable(0f) }
-    val scope = rememberCoroutineScope()
-    var dragAccumulated by remember(key) { mutableStateOf(0f) }
-
-    Box(
+    BoxWithConstraints(
         modifier = Modifier
             .fillMaxSize()
             .padding(24.dp)
     ) {
+        val containerWidthPx = with(androidx.compose.ui.platform.LocalDensity.current) {
+            maxWidth.toPx()
+        }
+        val swipeThresholdPx = with(androidx.compose.ui.platform.LocalDensity.current) { 110.dp.toPx() }
+
+        val offsetX = remember(key) { Animatable(0f) }
+        val scope = rememberCoroutineScope()
+        var dragAccumulated by remember(key) { mutableStateOf(0f) }
+
+        var scale by remember(key) { mutableStateOf(1f) }
+        var panX by remember(key) { mutableStateOf(0f) }
+        var panY by remember(key) { mutableStateOf(0f) }
+        val isZoomed = scale > 1.01f
+
         Text(
             text = "$remaining foto${if (remaining == 1) "" else "s"} por revisar",
             color = Color.LightGray,
@@ -121,46 +183,74 @@ private fun SwipeablePhotoCard(
                     translationX = offsetX.value
                     rotationZ = (offsetX.value / 40f).coerceIn(-12f, 12f)
                 }
-                .pointerInput(key) {
+                .pointerInput(key, isZoomed) {
                     detectHorizontalDragGestures(
                         onDragEnd = {
                             scope.launch {
                                 when {
+                                    isZoomed -> {
+                                        dragAccumulated = 0f
+                                    }
                                     dragAccumulated > swipeThresholdPx -> {
                                         offsetX.animateTo(
-                                            targetValue = screenWidthPx,
-                                            animationSpec = tween(250)
+                                            targetValue = containerWidthPx * 1.4f,
+                                            animationSpec = tween(280)
                                         )
                                         onKeep()
                                     }
                                     dragAccumulated < -swipeThresholdPx -> {
                                         offsetX.animateTo(
-                                            targetValue = -screenWidthPx,
-                                            animationSpec = tween(250)
+                                            targetValue = -containerWidthPx * 1.4f,
+                                            animationSpec = tween(280)
                                         )
-                                        onDelete()
+                                        onTrash()
                                     }
                                     else -> {
-                                        offsetX.animateTo(0f, animationSpec = tween(200))
+                                        offsetX.animateTo(0f, animationSpec = tween(220))
+                                        dragAccumulated = 0f
                                     }
                                 }
-                                dragAccumulated = 0f
                             }
                         }
                     ) { change, dragAmount ->
-                        change.consume()
-                        dragAccumulated += dragAmount
-                        scope.launch {
-                            offsetX.snapTo(offsetX.value + dragAmount)
+                        if (!isZoomed) {
+                            change.consume()
+                            dragAccumulated += dragAmount
+                            scope.launch {
+                                offsetX.snapTo(offsetX.value + dragAmount)
+                            }
                         }
                     }
                 }
         ) {
-            Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(key) {
+                        detectTransformGestures { _, pan, zoom, _ ->
+                            val newScale = (scale * zoom).coerceIn(1f, 4f)
+                            scale = newScale
+                            if (newScale > 1f) {
+                                panX += pan.x
+                                panY += pan.y
+                            } else {
+                                panX = 0f
+                                panY = 0f
+                            }
+                        }
+                    }
+            ) {
                 AsyncImage(
                     model = photo.uri,
                     contentDescription = photo.displayName,
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = panX
+                            translationY = panY
+                        }
                 )
 
                 if (offsetX.value > 30f) {
@@ -168,15 +258,15 @@ private fun SwipeablePhotoCard(
                         text = "GUARDAR",
                         color = Color(0xFF2ECC71),
                         alignment = Alignment.TopStart,
-                        alpha = (offsetX.value / swipeThresholdPx).coerceIn(0f, 1f)
+                        alpha = (abs(offsetX.value) / swipeThresholdPx).coerceIn(0f, 1f)
                     )
                 }
                 if (offsetX.value < -30f) {
                     SwipeBadge(
-                        text = "ELIMINAR",
+                        text = "PAPELERA",
                         color = Color(0xFFE74C3C),
                         alignment = Alignment.TopEnd,
-                        alpha = (-offsetX.value / swipeThresholdPx).coerceIn(0f, 1f)
+                        alpha = (abs(offsetX.value) / swipeThresholdPx).coerceIn(0f, 1f)
                     )
                 }
             }
@@ -193,19 +283,19 @@ private fun SwipeablePhotoCard(
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFE74C3C)),
                 onClick = {
                     scope.launch {
-                        offsetX.animateTo(-screenWidthPx, animationSpec = tween(250))
-                        onDelete()
+                        offsetX.animateTo(-containerWidthPx * 1.4f, animationSpec = tween(280))
+                        onTrash()
                     }
                 }
             ) {
-                Icon(Icons.Filled.Close, contentDescription = "Eliminar", tint = Color.White)
+                Icon(Icons.Filled.Close, contentDescription = "Mandar a la papelera", tint = Color.White)
             }
 
             FilledIconButton(
                 colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFF2ECC71)),
                 onClick = {
                     scope.launch {
-                        offsetX.animateTo(screenWidthPx, animationSpec = tween(250))
+                        offsetX.animateTo(containerWidthPx * 1.4f, animationSpec = tween(280))
                         onKeep()
                     }
                 }
