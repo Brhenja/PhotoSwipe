@@ -12,7 +12,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -22,7 +21,6 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.photoswipe.app.data.Photo
 import kotlinx.coroutines.launch
-import kotlin.math.roundToInt
 
 @Composable
 fun PhotoSwipeScreen(
@@ -86,11 +84,6 @@ private fun EmptyState() {
     }
 }
 
-/**
- * Tarjeta de foto que se puede arrastrar horizontalmente.
- * Deslizar a la derecha más allá del umbral = guardar.
- * Deslizar a la izquierda más allá del umbral = eliminar.
- */
 @Composable
 private fun SwipeablePhotoCard(
     key: Long,
@@ -100,10 +93,9 @@ private fun SwipeablePhotoCard(
     onDelete: () -> Unit
 ) {
     val density = LocalDensity.current
-    val screenWidthPx = with(density) { 1000.dp.toPx() } // referencia amplia, suficiente como umbral relativo
+    val screenWidthPx = with(density) { 1000.dp.toPx() }
     val swipeThresholdPx = with(density) { 120.dp.toPx() }
 
-    // offsetX se reinicia automáticamente cuando cambia "key" (nueva foto)
     val offsetX = remember(key) { Animatable(0f) }
     val scope = rememberCoroutineScope()
     var dragAccumulated by remember(key) { mutableStateOf(0f) }
@@ -113,7 +105,6 @@ private fun SwipeablePhotoCard(
             .fillMaxSize()
             .padding(24.dp)
     ) {
-        // Contador arriba
         Text(
             text = "$remaining foto${if (remaining == 1) "" else "s"} por revisar",
             color = Color.LightGray,
@@ -136,7 +127,6 @@ private fun SwipeablePhotoCard(
                             scope.launch {
                                 when {
                                     dragAccumulated > swipeThresholdPx -> {
-                                        // Swipe a la derecha: animamos fuera de pantalla y guardamos
                                         offsetX.animateTo(
                                             targetValue = screenWidthPx,
                                             animationSpec = tween(250)
@@ -144,7 +134,6 @@ private fun SwipeablePhotoCard(
                                         onKeep()
                                     }
                                     dragAccumulated < -swipeThresholdPx -> {
-                                        // Swipe a la izquierda: animamos fuera de pantalla y eliminamos
                                         offsetX.animateTo(
                                             targetValue = -screenWidthPx,
                                             animationSpec = tween(250)
@@ -152,7 +141,6 @@ private fun SwipeablePhotoCard(
                                         onDelete()
                                     }
                                     else -> {
-                                        // No llegó al umbral: vuelve al centro
                                         offsetX.animateTo(0f, animationSpec = tween(200))
                                     }
                                 }
@@ -175,7 +163,6 @@ private fun SwipeablePhotoCard(
                     modifier = Modifier.fillMaxSize()
                 )
 
-                // Indicador "GUARDAR" que aparece al arrastrar a la derecha
                 if (offsetX.value > 30f) {
                     SwipeBadge(
                         text = "GUARDAR",
@@ -184,10 +171,65 @@ private fun SwipeablePhotoCard(
                         alpha = (offsetX.value / swipeThresholdPx).coerceIn(0f, 1f)
                     )
                 }
-                // Indicador "ELIMINAR" al arrastrar a la izquierda
                 if (offsetX.value < -30f) {
                     SwipeBadge(
                         text = "ELIMINAR",
                         color = Color(0xFFE74C3C),
                         alignment = Alignment.TopEnd,
-                        alpha = (-offsetX.value / swipeThreshold
+                        alpha = (-offsetX.value / swipeThresholdPx).coerceIn(0f, 1f)
+                    )
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            FilledIconButton(
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFE74C3C)),
+                onClick = {
+                    scope.launch {
+                        offsetX.animateTo(-screenWidthPx, animationSpec = tween(250))
+                        onDelete()
+                    }
+                }
+            ) {
+                Icon(Icons.Filled.Close, contentDescription = "Eliminar", tint = Color.White)
+            }
+
+            FilledIconButton(
+                colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFF2ECC71)),
+                onClick = {
+                    scope.launch {
+                        offsetX.animateTo(screenWidthPx, animationSpec = tween(250))
+                        onKeep()
+                    }
+                }
+            ) {
+                Icon(Icons.Filled.Check, contentDescription = "Guardar", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun BoxScope.SwipeBadge(
+    text: String,
+    color: Color,
+    alignment: Alignment,
+    alpha: Float
+) {
+    Box(
+        modifier = Modifier
+            .align(alignment)
+            .padding(20.dp)
+            .background(color.copy(alpha = 0.85f * alpha))
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+    ) {
+        Text(text, color = Color.White, fontSize = 18.sp)
+    }
+}
